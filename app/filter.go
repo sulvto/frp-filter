@@ -163,6 +163,7 @@ func PostHandler(handler RequestHandler) http.HandlerFunc {
 var storage *Storage
 var DB_BUCKET = string("frp-filter")
 var DB_PREFIX_ADDR_TIME = string("addr-time:")
+var DB_PREFIX_IP_LOCATION = string("ip-location:")
 var DB_PREFIX_IP_TIME = string("ip-time:")
 var DB_PREFIX_COUNT = string("count:")
 
@@ -300,10 +301,46 @@ func accessHandle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func ipLocationHandle(w http.ResponseWriter, r *http.Request) {
+	// 确保只处理 GET 请求
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+    // 获取查询参数
+    query := r.URL.Query()
+
+    // 获取单个参数值
+    ip := query.Get("ip")
+    log.Printf("ip: %s", ip)
+
+	location := storage.GetString(DB_PREFIX_IP_LOCATION + ip)
+	if (location == "") {
+		iPInfoResponse, err := GetIPInfo(ip)
+		if iPInfoResponse.Data != nil: {
+			location = string(iPInfoResponse.Data)
+			storage.PutString(DB_PREFIX_IP_LOCATION + ip, location)
+		} else {
+			location = "{}"
+		}
+	}
+
+	// 设置响应的内容类型为 JSON
+	w.Header().Set("Content-Type", "application/json")
+	// 将数据编码为 JSON 并写入响应
+	err := json.NewEncoder(w).Encode(location)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func initializeHandle() {
 	// 注册处理器
 	http.HandleFunc("/", indexHandle)
 	http.HandleFunc("/access", accessHandle)
+	http.Handle("/ip/location", ipLocationHandle)
 	http.Handle("/new_proxy", PostHandler(NewProxyHandler{}))
 	http.Handle("/new_work_conn", PostHandler(NewWorkConnHandler{}))
 	http.Handle("/new_user_conn", PostHandler(NewUserConnHandler{}))

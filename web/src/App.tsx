@@ -5,16 +5,14 @@ import { SearchOutlined } from '@ant-design/icons';
 import type { SorterResult } from 'antd/es/table/interface';
 import type { FilterDropdownProps } from 'antd/es/table/interface';
 import Highlighter from 'react-highlight-words';
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
 import './App.css'
 
 function App() {
-    const [count, setCount] = useState(0)
-
     interface DataType {
+        no: number;
         ip: string;
         time: string;
+        info: string;
         count: number;
     }
     type DataIndex = keyof DataType;
@@ -109,11 +107,16 @@ function App() {
         filterIcon: (filtered: boolean) => (
             <SearchOutlined style={{ color: filtered ? '#1677ff' : undefined }} />
         ),
-        onFilter: (value, record) =>
-            record[dataIndex]
+        onFilter: (value, record) => {
+            let results = record[dataIndex]
                 .toString()
                 .toLowerCase()
-                .includes((value as string).toLowerCase()),
+                .includes((value as string).toLowerCase());
+
+            tableParams.pagination.current = 1;
+            tableParams.pagination.total = results.length;
+            return results;
+        },
         onFilterDropdownOpenChange: (visible) => {
             if (visible) {
                 setTimeout(() => searchInput.current?.select(), 100);
@@ -132,11 +135,31 @@ function App() {
             ),
     });
 
+    const fetchIpInfo = (record) => {
+        fetch(`https://mesh.if.iqiyi.com/aid/ip/info?version=1.1.1&ip=${record.ip}`)
+            .then((res) => res.json())
+            .then((info) => {
+                console.log(info);
+                var area = [info.data.countryCN, info.data.provinceCN, info.data.cityCN];
+                area = area.filter((item, index) => area.indexOf(item) === index).filter(item => item !== '*').join('-');
+                var info = `${area} ${info.data.ispCN}`.trim();
+                setData(prevData =>
+                    prevData.map(item =>
+                      item.no === record.no ? { ...item, info } : item
+                    )
+                  );
+            });
+    };
+
     const fetchData = () => {
         setLoading(true);
         fetch(`http://211.149.239.251:7777/access`)
             .then((res) => res.json())
             .then((data) => {
+                for (var i = 0; i < data.length; i++) {
+                    data[i].no = i;
+                    data[i].info = "";
+                }
                 setData(data);
                 setLoading(false);
                 setTableParams({
@@ -158,7 +181,6 @@ function App() {
     ]);
 
     const handleTableChange: TableProps<DataType>['onChange'] = (pagination, filters, sorter) => {
-        console.log("filters", filters);
         setTableParams({
             pagination,
             filters,
@@ -189,6 +211,11 @@ function App() {
             sortDirections: ['ascend', 'descend'],
         },
         {
+            title: '归属地',
+            dataIndex: 'info',
+            key: 'info',
+        },
+        {
             title: '访问次数',
             dataIndex: 'count',
             key: 'count',
@@ -197,10 +224,11 @@ function App() {
         },
         {
             title: '操作',
-            width: 150,
+            width: 200,
             fixed: 'right',
-            render: () => (
+            render: (_, record) => (
                 <Space>
+                    <a onClick={() => fetchIpInfo(record)}>查询归属地</a>
                     <a>屏蔽</a>
                     <a>取消屏蔽</a>
                     <a>删除</a>
@@ -211,30 +239,10 @@ function App() {
 
     return (
         <>
-            <div>
-                <a href="https://vitejs.dev" target="_blank">
-                    <img src={viteLogo} className="logo" alt="Vite logo" />
-                </a>
-                <a href="https://react.dev" target="_blank">
-                    <img src={reactLogo} className="logo react" alt="React logo" />
-                </a>
-            </div>
-            <h1>Vite + React</h1>
-            <div className="card">
-                <button onClick={() => setCount((count) => count + 1)}>
-                    count is {count}
-                </button>
-                <p>
-                    Edit <code>src/App.tsx</code> and save to test HMR
-                </p>
-            </div>
-            <p className="read-the-docs">
-                Click on the Vite and React logos to learn more
-            </p>
-
             <Table<DataType>
                 dataSource={data}
                 columns={columns}
+                rowKey={(record) => record.no}
                 pagination={tableParams.pagination}
                 loading={loading}
                 onChange={handleTableChange}
