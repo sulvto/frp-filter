@@ -269,6 +269,7 @@ type AccessItem struct {
 	IP    string `json:"ip"`
 	Time  string `json:"time"`
 	Count uint   `json:"count"`
+	Info  IPInfo `json:"info"`
 	// 添加更多字段...
 }
 
@@ -286,7 +287,14 @@ func accessHandle(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(keyStr, DB_PREFIX_IP_TIME) {
 			ip := strings.TrimPrefix(keyStr, DB_PREFIX_IP_TIME)
 			count, _ := storage.GetInt(DB_PREFIX_COUNT + ip)
-			data = append(data, AccessItem{IP: ip, Time: string(value), Count: count})
+			var ipInfo *IPInfo = &IPInfo{}
+			location, _ := storage.GetString(DB_PREFIX_IP_LOCATION + ip)
+			if location != "" {
+				json.Unmarshal([]byte(location), ipInfo)
+				data = append(data, AccessItem{IP: ip, Time: string(value), Count: count, Info: *ipInfo})
+			} else {
+				data = append(data, AccessItem{IP: ip, Time: string(value), Count: count})
+			}
 		}
 	})
 
@@ -308,39 +316,35 @@ func ipLocationHandle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    // 获取查询参数
-    query := r.URL.Query()
+	// 获取查询参数
+	query := r.URL.Query()
 
-    // 获取单个参数值
-    ip := query.Get("ip")
-    log.Printf("ip: %s", ip)
+	// 获取单个参数值
+	ip := query.Get("ip")
 
-	location := storage.GetString(DB_PREFIX_IP_LOCATION + ip)
-	if (location == "") {
-		iPInfoResponse, err := GetIPInfo(ip)
-		if iPInfoResponse.Data != nil: {
-			location = string(iPInfoResponse.Data)
-			storage.PutString(DB_PREFIX_IP_LOCATION + ip, location)
-		} else {
+	location, _ := storage.GetString(DB_PREFIX_IP_LOCATION + ip)
+	if location == "" {
+		iPInfoResponse, _ := GetIPInfo(ip)
+		if iPInfoResponse.Data == nil {
 			location = "{}"
+		} else {
+			data, _ := json.Marshal(iPInfoResponse.Data)
+			location = string(data)
+			storage.PutString(DB_PREFIX_IP_LOCATION+ip, location)
 		}
 	}
 
 	// 设置响应的内容类型为 JSON
 	w.Header().Set("Content-Type", "application/json")
-	// 将数据编码为 JSON 并写入响应
-	err := json.NewEncoder(w).Encode(location)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+
+	w.Write([]byte(location))
 }
 
 func initializeHandle() {
 	// 注册处理器
 	http.HandleFunc("/", indexHandle)
 	http.HandleFunc("/access", accessHandle)
-	http.Handle("/ip/location", ipLocationHandle)
+	http.HandleFunc("/ip/location", ipLocationHandle)
 	http.Handle("/new_proxy", PostHandler(NewProxyHandler{}))
 	http.Handle("/new_work_conn", PostHandler(NewWorkConnHandler{}))
 	http.Handle("/new_user_conn", PostHandler(NewUserConnHandler{}))

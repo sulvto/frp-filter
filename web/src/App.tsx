@@ -12,7 +12,7 @@ function App() {
         no: number;
         ip: string;
         time: string;
-        info: string;
+        location: string;
         count: number;
     }
     type DataIndex = keyof DataType;
@@ -107,16 +107,10 @@ function App() {
         filterIcon: (filtered: boolean) => (
             <SearchOutlined style={{ color: filtered ? '#1677ff' : undefined }} />
         ),
-        onFilter: (value, record) => {
-            let results = record[dataIndex]
+        onFilter: (value, record) => record[dataIndex]
                 .toString()
                 .toLowerCase()
-                .includes((value as string).toLowerCase());
-
-            tableParams.pagination.current = 1;
-            tableParams.pagination.total = results.length;
-            return results;
-        },
+                .includes((value as string).toLowerCase()),
         onFilterDropdownOpenChange: (visible) => {
             if (visible) {
                 setTimeout(() => searchInput.current?.select(), 100);
@@ -135,18 +129,25 @@ function App() {
             ),
     });
 
-    const fetchIpInfo = (record) => {
-        fetch(`https://mesh.if.iqiyi.com/aid/ip/info?version=1.1.1&ip=${record.ip}`)
+    const toLocation = (info: any) => {
+        if (info) {
+            let area_arr:string[] = [info.countryCN, info.provinceCN, info.cityCN];
+            let area:string = area_arr.filter((item, index) => area_arr.indexOf(item) === index).filter(item => item !== '*').join('-');
+            return `${area} ${info.ispCN}`.trim();
+        } else {
+            return "";
+        }
+    }
+
+    const fetchIpInfo = (record: DataType) => {
+        fetch(`http://211.149.239.251:7777/ip/location?ip=${record.ip}`)
             .then((res) => res.json())
             .then((info) => {
-                console.log(info);
-                var area = [info.data.countryCN, info.data.provinceCN, info.data.cityCN];
-                area = area.filter((item, index) => area.indexOf(item) === index).filter(item => item !== '*').join('-');
-                var info = `${area} ${info.data.ispCN}`.trim();
-                setData(prevData =>
-                    prevData.map(item =>
-                      item.no === record.no ? { ...item, info } : item
-                    )
+                let location = toLocation(info)
+                setData((data) =>
+                    data ? data.map(item =>
+                      item.no === record.no ? { ...item, location: location } : item
+                    ) : []
                   );
             });
     };
@@ -158,7 +159,7 @@ function App() {
             .then((data) => {
                 for (var i = 0; i < data.length; i++) {
                     data[i].no = i;
-                    data[i].info = "";
+                    data[i].location = toLocation(data[i].info);
                 }
                 setData(data);
                 setLoading(false);
@@ -212,8 +213,8 @@ function App() {
         },
         {
             title: '归属地',
-            dataIndex: 'info',
-            key: 'info',
+            dataIndex: 'location',
+            key: 'location',
         },
         {
             title: '访问次数',
@@ -224,7 +225,7 @@ function App() {
         },
         {
             title: '操作',
-            width: 200,
+            width: 250,
             fixed: 'right',
             render: (_, record) => (
                 <Space>
@@ -246,7 +247,7 @@ function App() {
                 pagination={tableParams.pagination}
                 loading={loading}
                 onChange={handleTableChange}
-            />;
+            />
         </>
     )
 }

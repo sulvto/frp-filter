@@ -63,3 +63,8 @@ curl -X POST http://localhost:8000/new_user_conn \
 echo \n
 echo test access
 curl -X GET http://localhost:8000/access
+
+
+echo \n
+echo test ip/location
+curl -X GET http://localhost:8000/ip/location?ip=121.8.215.106
