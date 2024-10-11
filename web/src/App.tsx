@@ -1,9 +1,10 @@
-import { RouterProvider, Navigate, createBrowserRouter } from 'react-router-dom';
+import { RouterProvider, Navigate, createHashRouter } from 'react-router-dom';
 import Error403 from './pages/403.tsx'
 import Error404 from './pages/404.tsx'
 import Access from './pages/Access'
 import AppLayout from './pages/Layout'
-import { Overview } from './pages/Overview.tsx'
+import Overview from './pages/Overview'
+import Blacklist from './pages/Blacklist'
 
 const routes = [
     {
@@ -18,6 +19,10 @@ const routes = [
             {
                 path: '/access',
                 element: <Access />
+            },
+            {
+                path: '/blacklist',
+                element: <Blacklist />
             },
         ]
     },
@@ -34,7 +39,7 @@ const routes = [
         element: <Navigate to={'/404'} replace />
     }
 ]
-const router = createBrowserRouter(routes)
+const router = createHashRouter(routes)
 
 function App() {
     return (

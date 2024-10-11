@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import {
     BarChartOutlined,
     TableOutlined,
+    SafetyOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { Breadcrumb, Layout, Menu, theme } from 'antd';
@@ -18,12 +19,17 @@ const sideItems: MenuProps['items'] = [
     {
         key: '/',
         icon: React.createElement(BarChartOutlined),
-        label: <Link to="/">Home</Link>,
+        label: <Link to="/">首页</Link>,
     },
     {
         key: '/access',
         icon: React.createElement(TableOutlined),
-        label: <Link to="/access">Access</Link>,
+        label: <Link to="/access">访问记录</Link>,
+    },
+    {
+        key: '/blacklist',
+        icon: React.createElement(SafetyOutlined),
+        label: <Link to="/blacklist">黑名单</Link>,
     },
 ];
 

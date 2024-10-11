@@ -119,7 +119,11 @@ func (s *Storage) GetInt(bucket, key string) (uint, error) {
 func (s *Storage) PrefixScans(bucket string, prefix []byte, each func(key, value []byte)) error {
 	return s.db.View(func(tx *bbolt.Tx) error {
 		// Assume bucket exists and has keys
-		c := tx.Bucket([]byte(bucket)).Cursor()
+		b := tx.Bucket([]byte(bucket))
+		if b == nil {
+			return nil // 桶不存在
+		}
+		c := b.Cursor()
 
 		for k, v := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, v = c.Next() {
 			each(k, v)
@@ -133,7 +137,11 @@ func (s *Storage) PrefixScans(bucket string, prefix []byte, each func(key, value
 func (s *Storage) RangeScans(bucket string, min, max []byte, each func(key, value []byte)) error {
 	return s.db.View(func(tx *bbolt.Tx) error {
 		// Assume our events bucket exists and has RFC3339 encoded time keys.
-		c := tx.Bucket([]byte(bucket)).Cursor()
+		b := tx.Bucket([]byte(bucket))
+		if b == nil {
+			return nil // 桶不存在
+		}
+		c := b.Cursor()
 
 		// Iterate over the 90's.
 		for k, v := c.Seek(min); k != nil && bytes.Compare(k, max) <= 0; k, v = c.Next() {
@@ -156,6 +164,24 @@ func (s *Storage) ForEach(bucket string, each func(key, value []byte)) error {
 			each(k, v)
 			return nil
 		})
+		return nil
+	})
+}
+
+// Delete
+func (s *Storage) Delete(bucket, key string) error {
+	// 删除键值对
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		// 获取 bucket
+		b := tx.Bucket([]byte(bucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", bucket)
+		}
+		err := b.Delete([]byte(key))
+		if err != nil {
+			return err
+		}
+
 		return nil
 	})
 }
@@ -195,6 +221,9 @@ func (b BaseStorager) RangeScans(bucket string, min, max []byte, each func(key, 
 }
 func (b BaseStorager) ForEach(each func(key, value []byte)) error {
 	return b.delegate.ForEach(b.bucket, each)
+}
+func (b BaseStorager) Delete(key string) error {
+	return b.delegate.Delete(b.bucket, key)
 }
 
 type SystemStorager struct{

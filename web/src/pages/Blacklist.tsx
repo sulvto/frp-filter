@@ -1,21 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import type { TableColumnsType, TableProps, GetProp, InputRef, TableColumnType } from 'antd';
-import { Button, Input, Space, Table, Skeleton, Tag } from 'antd';
+import { Button, Input, Space, Table, Skeleton } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import type { SorterResult } from 'antd/es/table/interface';
 import type { FilterDropdownProps } from 'antd/es/table/interface';
 import Highlighter from 'react-highlight-words';
+import blacklist from '../api/Blacklist'
 
-import blacklist from '../api/Blacklist';
-
-function Access() {
+function Blacklist() {
     interface DataType {
         no: number;
         ip: string;
         time: string;
         location: string;
         count: number;
-        block: boolean;
     }
     type DataIndex = keyof DataType;
     type TablePaginationConfig = Exclude<GetProp<TableProps, 'pagination'>, boolean>;
@@ -141,23 +139,9 @@ function Access() {
         }
     }
 
-    const fetchIpInfo = (record: DataType) => {
-        fetch(`http://211.149.239.251:7777/api/ip/location?ip=${record.ip}`)
-            .then((res) => res.json())
-            .then((info) => {
-                let location = toLocation(info)
-                setData((data) =>
-                    data ? data.map(item =>
-                        item.no === record.no ? { ...item, location: location } : item
-                    ) : []
-                );
-            });
-    };
-
     const fetchData = () => {
         setLoading(true);
-        fetch(`http://211.149.239.251:7777/api/access`)
-            .then((res) => res.json())
+        blacklist.all()
             .then((data) => {
                 for (var i = 0; i < data.length; i++) {
                     data[i].no = i;
@@ -227,31 +211,12 @@ function Access() {
             sortDirections: ['ascend', 'descend'],
         },
         {
-            title: '状态',
-            render: (_, record) => (
-                <Space>
-                    {
-                        record.block ? <Tag color="red">屏蔽访问</Tag>
-                            :
-                            <div/>
-                    }
-                </Space>
-            ),
-        },
-        {
             title: '操作',
             width: 250,
             fixed: 'right',
             render: (_, record) => (
                 <Space>
-                    <a onClick={() => fetchIpInfo(record)}>查询归属地</a>
-                    {
-                        record.block ?
-                            <a onClick={() => blacklist.del(record.ip)}>取消屏蔽</a>
-                            :
-                            <a onClick={() => blacklist.put(record.ip)}>屏蔽</a>
-                    }
-                    <a>删除</a>
+                    <a onClick={() => blacklist.del(record.ip)}>删除</a>
                 </Space>
             ),
         },
@@ -271,4 +236,4 @@ function Access() {
     )
 }
 
-export default Access
+export default Blacklist

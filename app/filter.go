@@ -127,18 +127,26 @@ func (h NewUserConnHandler) Handle(w http.ResponseWriter, r *http.Request, body 
 
 	remoteAddr := newUserConnRequest.Content.RemoteAddr
 	ip := strings.Split(remoteAddr, ":")[0]
-	// 获取当前时间
-	now := time.Now()
-	// 记录 ip:port、访问时间
-	storage.lastAccessAddr.PutString(remoteAddr, now.Format("2006-01-02 15:04:05"))
-	// 记录 ip、访问时间
-	storage.lastAccessIp.PutString(ip, now.Format("2006-01-02 15:04:05"))
 
-	count, _ := storage.counter.GetInt(ip)
-	storage.counter.PutInt(ip, count+1)
+	block, _ := storage.blacklist.GetString(ip)
+	if block != "" {
+		log.Printf("Blocked access from IP: %s", ip)
+		fmt.Fprintf(w, "{ \"reject\": true, \"reject_reason\": \"invalid user\" }")
+		return nil
+	} else {
+		// 获取当前时间
+		now := time.Now()
+		// 记录 ip:port、访问时间
+		storage.lastAccessAddr.PutString(remoteAddr, now.Format("2006-01-02 15:04:05"))
+		// 记录 ip、访问时间
+		storage.lastAccessIp.PutString(ip, now.Format("2006-01-02 15:04:05"))
 
-	fmt.Fprintf(w, "{ \"reject\": false, \"unchange\": true }")
-	return nil
+		count, _ := storage.counter.GetInt(ip)
+		storage.counter.PutInt(ip, count+1)
+
+		fmt.Fprintf(w, "{ \"reject\": false, \"unchange\": true }")
+		return nil
+	}
 }
 
 // 通用的POST请求处理函数
@@ -258,6 +266,7 @@ type AccessItem struct {
 	IP    string `json:"ip"`
 	Time  string `json:"time"`
 	Count uint   `json:"count"`
+	Block bool   `json:"block"`
 	Info  IPInfo `json:"info"`
 	// 添加更多字段...
 }
@@ -276,11 +285,12 @@ func accessHandle(w http.ResponseWriter, r *http.Request) {
 		count, _ := storage.counter.GetInt(ip)
 		var ipInfo *IPInfo = &IPInfo{}
 		location, _ := storage.location.GetString(ip)
+		block, _ := storage.blacklist.GetString(ip)
 		if location != "" {
 			json.Unmarshal([]byte(location), ipInfo)
-			data = append(data, AccessItem{IP: ip, Time: string(value), Count: count, Info: *ipInfo})
+			data = append(data, AccessItem{IP: ip, Time: string(value), Count: count, Block: block != "", Info: *ipInfo})
 		} else {
-			data = append(data, AccessItem{IP: ip, Time: string(value), Count: count})
+			data = append(data, AccessItem{IP: ip, Time: string(value), Count: count, Block: block != ""})
 		}
 	})
 
@@ -326,11 +336,91 @@ func ipLocationHandle(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(location))
 }
 
+type BlacklistItem struct {
+	IP    string `json:"ip"`
+	Time  string `json:"time"`
+	Count uint   `json:"count"`
+	Info  IPInfo `json:"info"`
+	// 添加更多字段...
+}
+
+func ipBlacklistHandle(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		// GET: query
+		// 获取查询参数
+		ip := r.URL.Query().Get("ip")
+		if (ip != "") {
+			t, _ := storage.blacklist.GetString(ip)
+			if t == "" {
+				w.WriteHeader(http.StatusOK)
+			} else {
+				http.NotFound(w, r)
+			}
+		} else {
+			// 构造要返回的数据
+			data := []BlacklistItem{}
+			storage.blacklist.ForEach(func(key, value []byte) {
+				ip := string(key)
+				time := string(value)
+				var ipInfo *IPInfo = &IPInfo{}
+				count, _ := storage.counter.GetInt(ip)
+				location, _ := storage.location.GetString(ip)
+				if location != "" {
+					json.Unmarshal([]byte(location), ipInfo)
+					data = append(data, BlacklistItem{IP: ip, Time: time, Count: count, Info: *ipInfo})
+				} else {
+					data = append(data, BlacklistItem{IP: ip, Time: time, Count: count})
+				}
+			})
+
+			// 设置响应的内容类型为 JSON
+			w.Header().Set("Content-Type", "application/json")
+
+			// 将数据编码为 JSON 并写入响应
+			err := json.NewEncoder(w).Encode(data)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	} else if r.Method == http.MethodDelete {
+		// DELETE: delete
+		// 获取查询参数
+		ip := r.URL.Query().Get("ip")
+		t, err := storage.blacklist.GetString(ip)
+		if t != "" {
+			if err = storage.blacklist.Delete(ip); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+		} else {
+			http.NotFound(w, r)
+		}
+	} else if r.Method == http.MethodPost || r.Method == http.MethodPut {
+		// PUST/PUT: add
+		// 获取查询参数
+		ip := r.URL.Query().Get("ip")
+		now := time.Now()
+		if err := storage.blacklist.PutString(ip, now.Format("2006-01-02 15:04:05")); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	} else {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func initializeHandle() {
 	// 注册处理器
+	// web
 	http.HandleFunc("/", indexHandle)
-	http.HandleFunc("/access", accessHandle)
-	http.HandleFunc("/ip/location", ipLocationHandle)
+	// api
+	http.HandleFunc("/api/access", accessHandle)
+	http.HandleFunc("/api/ip/location", ipLocationHandle)
+	http.HandleFunc("/api/ip/blacklist", ipBlacklistHandle)
+	// plugin
 	http.Handle("/new_proxy", PostHandler(NewProxyHandler{}))
 	http.Handle("/new_work_conn", PostHandler(NewWorkConnHandler{}))
 	http.Handle("/new_user_conn", PostHandler(NewUserConnHandler{}))

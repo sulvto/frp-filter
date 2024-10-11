@@ -39,7 +39,7 @@ const config = {
     }
 };
 
-export function Overview() {
+const Overview = () => {
     return <>
         <Flex gap="middle" vertical>
             <Flex gap="small" vertical={false} >
@@ -61,3 +61,5 @@ export function Overview() {
     </>
         ;
 }
+
+export default Overview
