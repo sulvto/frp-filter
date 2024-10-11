@@ -130,12 +130,12 @@ func (h NewUserConnHandler) Handle(w http.ResponseWriter, r *http.Request, body 
 	// 获取当前时间
 	now := time.Now()
 	// 记录 ip:port、访问时间
-	storage.PutString(DB_PREFIX_ADDR_TIME+remoteAddr, now.Format("2006-01-02 15:04:05"))
+	storage.lastAccessAddr.PutString(remoteAddr, now.Format("2006-01-02 15:04:05"))
 	// 记录 ip、访问时间
-	storage.PutString(DB_PREFIX_IP_TIME+ip, now.Format("2006-01-02 15:04:05"))
+	storage.lastAccessIp.PutString(ip, now.Format("2006-01-02 15:04:05"))
 
-	count, _ := storage.GetInt(DB_PREFIX_COUNT + ip)
-	storage.PutInt(DB_PREFIX_COUNT+ip, count+1)
+	count, _ := storage.counter.GetInt(ip)
+	storage.counter.PutInt(ip, count+1)
 
 	fmt.Fprintf(w, "{ \"reject\": false, \"unchange\": true }")
 	return nil
@@ -161,11 +161,6 @@ func PostHandler(handler RequestHandler) http.HandlerFunc {
 
 // db 全局变量存储数据库引用
 var storage *Storage
-var DB_BUCKET = string("frp-filter")
-var DB_PREFIX_ADDR_TIME = string("addr-time:")
-var DB_PREFIX_IP_LOCATION = string("ip-location:")
-var DB_PREFIX_IP_TIME = string("ip-time:")
-var DB_PREFIX_COUNT = string("count:")
 
 func initializeDB() error {
 	// 获取用户的主目录
@@ -195,20 +190,14 @@ func initializeDB() error {
 	}
 
 	// 创建数据库包装器实例
-	storage, err = NewStorage(dbFile, DB_BUCKET)
+	storage, err = NewStorage(dbFile)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// 确保 bucket 存在
-	err = storage.EnsureBucket()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	password, _ := storage.GetString("password")
+	password, _ := storage.system.GetString("password")
 	if password == "" {
-		storage.PutString("password", "123456")
+		storage.system.PutString("password", "123456")
 	}
 
 	return nil
@@ -282,19 +271,16 @@ func accessHandle(w http.ResponseWriter, r *http.Request) {
 
 	// 构造要返回的数据
 	data := []AccessItem{}
-	storage.Cursor(func(key, value []byte) {
-		keyStr := string(key)
-		if strings.HasPrefix(keyStr, DB_PREFIX_IP_TIME) {
-			ip := strings.TrimPrefix(keyStr, DB_PREFIX_IP_TIME)
-			count, _ := storage.GetInt(DB_PREFIX_COUNT + ip)
-			var ipInfo *IPInfo = &IPInfo{}
-			location, _ := storage.GetString(DB_PREFIX_IP_LOCATION + ip)
-			if location != "" {
-				json.Unmarshal([]byte(location), ipInfo)
-				data = append(data, AccessItem{IP: ip, Time: string(value), Count: count, Info: *ipInfo})
-			} else {
-				data = append(data, AccessItem{IP: ip, Time: string(value), Count: count})
-			}
+	storage.lastAccessIp.ForEach(func(key, value []byte) {
+		ip := string(key)
+		count, _ := storage.counter.GetInt(ip)
+		var ipInfo *IPInfo = &IPInfo{}
+		location, _ := storage.location.GetString(ip)
+		if location != "" {
+			json.Unmarshal([]byte(location), ipInfo)
+			data = append(data, AccessItem{IP: ip, Time: string(value), Count: count, Info: *ipInfo})
+		} else {
+			data = append(data, AccessItem{IP: ip, Time: string(value), Count: count})
 		}
 	})
 
@@ -322,7 +308,7 @@ func ipLocationHandle(w http.ResponseWriter, r *http.Request) {
 	// 获取单个参数值
 	ip := query.Get("ip")
 
-	location, _ := storage.GetString(DB_PREFIX_IP_LOCATION + ip)
+	location, _ := storage.location.GetString(ip)
 	if location == "" {
 		iPInfoResponse, _ := GetIPInfo(ip)
 		if iPInfoResponse.Data == nil {
@@ -330,7 +316,7 @@ func ipLocationHandle(w http.ResponseWriter, r *http.Request) {
 		} else {
 			data, _ := json.Marshal(iPInfoResponse.Data)
 			location = string(data)
-			storage.PutString(DB_PREFIX_IP_LOCATION+ip, location)
+			storage.location.PutString(ip, location)
 		}
 	}
 
